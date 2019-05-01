@@ -1,11 +1,22 @@
 module Models
 
-mutable struct Model{T}
+using Dates
+
+abstract type AbstractModel
+end
+
+initialize( M::AbstractModel ) = error( "initialize not yet implemented for $(typeof(M))" )
+
+roll( M::AbstractModel, y ) = error( "roll not yet implemented for $(typeof(M))" )
+
+update( M::AbstractModel, y ) = error( "update not yet implemented for $(typeof(M))" )
+
+mutable struct AdaptedModel{T <: AbstractModel}
     dates::Vector{Date}
     models::Vector{T}
 end
 
-function Model{T}( modeldir::String )
+function AdaptedModel{T}( modeldir::String ) where {T}
     fileregex = r"_([0-9]{8})$"
     dateformat = Dates.DateFormat( "yyyymmdd" )
     dates = Date[]
