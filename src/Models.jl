@@ -11,7 +11,7 @@ roll( M::AbstractModel ) = error( "roll not yet implemented for $(typeof(M))" )
 
 update( M::AbstractModel, y::Float64 ) = error( "update not yet implemented for $(typeof(M))" )
 
-rand( M::AbstractModel, n::Int ) = error( "rand not yet implemented for $(typeof(M))" )
+Base.rand( M::AbstractModel, n::Int ) = error( "rand not yet implemented for $(typeof(M))" )
 
 mutable struct AdaptedModel{T <: AbstractModel}
     dates::Vector{Date}
@@ -19,7 +19,7 @@ mutable struct AdaptedModel{T <: AbstractModel}
     index::Int
 end
 
-function AdaptedModel{T}( modeldir::String ) where {T}
+function AdaptedModel{T}( modeldir::String, d::Date ) where {T}
     fileregex = r"_([0-9]{8})$"
     dateformat = Dates.DateFormat( "yyyymmdd" )
     dates = Date[]
@@ -39,21 +39,20 @@ function AdaptedModel{T}( modeldir::String ) where {T}
         end
     end
 
-    return AdaptedModel( dates, models, 0 )
+    index = searchsorted( dates, d ).stop
+    if index == 0
+        error( "No model available at date $d" )
+    end
+    return AdaptedModel( dates, models, index )
 end    
 
-function update( M::AdaptedModel{T}, d::Date, y::Float64 ) where {T}
-    if M.index == 0
-        M.index = searchsorted( M.dates, d ).stop
-        if M.index == 0
-            error( "No model available at date $d" )
-        end
-    else
-        while M.index < length(M.dates) && M.dates[M.index+1] < d
-            M.index += 1
-        end
-        update( M.models[M.index], y )
+function update( model::AdaptedModel, d::Date, y::Float64 )
+    while model.index < length(model.dates) && model.dates[model.index+1] < d
+        model.index += 1
     end
+    update( model.models[model.index], y )
 end
+
+Base.rand( model::AdaptedModel, n::Int ) = rand( model.models[model.index], n )
 
 end # module
