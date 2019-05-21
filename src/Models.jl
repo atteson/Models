@@ -53,7 +53,7 @@ end
 initialize( model::LogReturnModel ) = initialize( model.model )
 
 function update( model::LogReturnModel, y::Tuple{Date,Float64} )
-    update!( model.model, log(y[2]/model.lastprice) )
+    update( model.model, log(y[2]/model.lastprice) )
     model.lastdate = y[1]
     model.lastprice = y[2]
 end
@@ -66,7 +66,7 @@ function Distributions.rand!( model::LogReturnModel, v::AbstractVector{Float64},
     end
 end
 
-fit( model::LogReturnModel ) = fit( model.model )
+fit( model::LogReturnModel; kwargs... ) = fit( model.model; kwargs... )
 
 date( model::LogReturnModel ) = model.lastdate
 
