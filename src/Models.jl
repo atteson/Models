@@ -100,18 +100,18 @@ function Base.rand(
 end
 
 function update( model::MultiStartModel{T,U}, y::T ) where {T,U}
-    if processes == 1
-        for submodel in model.models
-            update( submodel, y )
-        end
-    else
-        error( "Multiple processes not yet implemented" )
+    for submodel in model.models
+        update( submodel, y )
     end
 end
 
-function fit( model::MultiStartModel )
-    for model in models
-        fit( model )
+function fit( model::MultiStartModel; kwargs... )
+    if model.processes == 1
+        for submodel in model.models
+            fit( submodel; kwargs... )
+        end
+    else
+        error( "fit not yet implemented across multiple processes" )
     end
 end
 

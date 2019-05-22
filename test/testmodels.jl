@@ -29,10 +29,8 @@ Models.fit( hmm3, debug=2 )
 @assert( maximum( abs.(hmm2.model.transitionprobabilities - hmm3.model.model.transitionprobabilities) ) < 1e-8 )
 @assert( maximum( abs.(hmm2.model.stateparameters - hmm3.model.model.stateparameters) ) < 1e-8 )
 
-
-modeltype = Models.FittableModel{Float64, HMMs.HMM{2,Normal,Brob,Float64}, typeof(HMMs.em)}
 modeltype = Models.MultiStartModel{Models.FittableModel{Float64,HMMs.HMM{2,Normal,Brob,Float64}, typeof(HMMs.em)}}
-rand( modeltype, seeds=1:5 )
-
-
+model = rand( modeltype, seeds=1:5 )
+Models.update( model, r )
+Models.fit( model, debug=2 )
 
