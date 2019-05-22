@@ -37,7 +37,10 @@ end
 
 FittableModel( model::U, ::F ) where {T,U <: AbstractModel{T}, F} = FittableModel{T,U,F}( model )
 
-fit( model::FittableModel{T,U,F}; kwargs... ) where {T,U,F} = F.instance( model.model; kwargs... )
+function fit( model::FittableModel{T,U,F}; kwargs... ) where {T,U,F}
+    F.instance( model.model; kwargs... )
+    return model
+end
 
 update( model::FittableModel{T}, y::T ) where {T} = update( model.model, y )
 
@@ -75,7 +78,10 @@ end
 Base.rand( ::Type{LogReturnModel{T}}; lastdate::Date = nothing, lastprice::Float64 = nothing, kwargs... ) where {T} =
     LogReturnModel( rand( T; kwargs... ), lastdate, lastprice )
 
-fit( model::LogReturnModel; kwargs... ) = fit( model.model; kwargs... )
+function fit( model::LogReturnModel; kwargs... )
+    fit( model.model; kwargs... )
+    return model
+end
 
 date( model::LogReturnModel ) = model.lastdate
 
@@ -126,10 +132,11 @@ function fit(
             wait(future)
         end
 
-        pmap( submodel -> fit( submodel; kwargs... ), WorkerPool(procs), model.models )
+        model.models = pmap( submodel -> fit( submodel; kwargs... ), WorkerPool(procs), model.models )
 
         rmprocs(procs)
     end
+    return model
 end
 
 mutable struct AdaptedModel{T,U <: AbstractModel{T}} <: DatedModel{T}
