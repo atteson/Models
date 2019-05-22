@@ -2,6 +2,7 @@ module Models
 
 using Dates
 using Distributions
+using Random
 
 abstract type AbstractModel{T}
 end
@@ -19,11 +20,13 @@ end
 Distributions.rand!( M::AbstractModel{T}, v::AbstractVector{T}, n::Int = length(v) ) where {T} =
     error( "rand not yet implemented for $(typeof(M))" )
 
-function Base.rand( M::AbstractModel, n::Int )
+function Base.rand( M::AbstractModel, n::Int; kwargs... )
     observations = zeros(n)
-    Distributions.rand!( M, observations )
+    Distributions.rand!( M, observations; kwargs... )
     return observations
 end
+
+Base.rand( ::Type{U} ) where {T,U <: AbstractModel{T}} = error( "rand not implemented for type $U" )
 
 fit( M::AbstractModel ) = error( "fit not yet implemented for $(typeof(M))" )
 
@@ -31,11 +34,13 @@ struct FittableModel{T, U <: AbstractModel{T},F <: Function} <: AbstractModel{T}
     model::U
 end
 
-FittableModel( model::U, ::F ) where {T,U <: AbstractModel{T},F} = FittableModel{T,U,F}( model )
+FittableModel( model::U, ::F ) where {T,U <: AbstractModel{T}, F} = FittableModel{T,U,F}( model )
 
 fit( model::FittableModel{T,U,F}; kwargs... ) where {T,U,F} = F.instance( model.model; kwargs... )
 
 update( model::FittableModel{T}, y::T ) where {T} = update( model.model, y )
+
+Base.rand( ::Type{FittableModel{T,U,F}}; kwargs... ) where {T, U, F} = FittableModel( rand( U; kwargs... ), F.instance )
 
 abstract type DatedModel{T} <: AbstractModel{Tuple{Date,T}}
 end
@@ -66,9 +71,49 @@ function Distributions.rand!( model::LogReturnModel, v::AbstractVector{Float64},
     end
 end
 
+Base.rand( ::Type{LogReturnModel{T}}; lastdate::Date = nothing, lastprice::Float64 = nothing, kwargs... ) where {T} =
+    LogReturnModel( rand( T; kwargs... ), lastdate, lastprice )
+
 fit( model::LogReturnModel; kwargs... ) = fit( model.model; kwargs... )
 
 date( model::LogReturnModel ) = model.lastdate
+
+mutable struct MultiStartModel{T,U <: AbstractModel{T}} <: AbstractModel{T}
+    models::Vector{U}
+    processes::Int
+    modules::Vector{Module}
+end
+
+function Base.rand(
+    ::Type{MultiStartModel{U}};
+    seeds::AbstractVector{Int} = 1:1,
+    processes::Int = 1,
+    modules::Vector{Module} = Module[],
+    kwargs...
+) where {T, U <: AbstractModel{T}}
+    models = U[]
+    for seed in seeds
+        Random.seed!( seed )
+        push!( models, rand( U; kwargs... ) )
+    end
+    return MultiStartModel( models, processes, modules )
+end
+
+function update( model::MultiStartModel{T,U}, y::T ) where {T,U}
+    if processes == 1
+        for submodel in model.models
+            update( submodel, y )
+        end
+    else
+        error( "Multiple processes not yet implemented" )
+    end
+end
+
+function fit( model::MultiStartModel )
+    for model in models
+        fit( model )
+    end
+end
 
 mutable struct AdaptedModel{T,U <: AbstractModel{T}} <: DatedModel{T}
     dates::Vector{Date}
