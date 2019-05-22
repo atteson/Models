@@ -3,6 +3,7 @@ module Models
 using Dates
 using Distributions
 using Random
+using Distributed
 
 abstract type AbstractModel{T}
 end
@@ -80,15 +81,11 @@ date( model::LogReturnModel ) = model.lastdate
 
 mutable struct MultiStartModel{T,U <: AbstractModel{T}} <: AbstractModel{T}
     models::Vector{U}
-    processes::Int
-    modules::Vector{Module}
 end
 
 function Base.rand(
     ::Type{MultiStartModel{U}};
     seeds::AbstractVector{Int} = 1:1,
-    processes::Int = 1,
-    modules::Vector{Module} = Module[],
     kwargs...
 ) where {T, U <: AbstractModel{T}}
     models = U[]
@@ -96,7 +93,7 @@ function Base.rand(
         Random.seed!( seed )
         push!( models, rand( U; kwargs... ) )
     end
-    return MultiStartModel( models, processes, modules )
+    return MultiStartModel( models )
 end
 
 function update( model::MultiStartModel{T,U}, y::T ) where {T,U}
@@ -105,13 +102,33 @@ function update( model::MultiStartModel{T,U}, y::T ) where {T,U}
     end
 end
 
-function fit( model::MultiStartModel; kwargs... )
-    if model.processes == 1
+function fit(
+    model::MultiStartModel;
+    processes::Int = 1,
+    modules::Vector{Symbol} = Symbol[],
+    kwargs...
+)
+    if processes == 1
         for submodel in model.models
             fit( submodel; kwargs... )
         end
     else
-        error( "fit not yet implemented across multiple processes" )
+        procs = addprocs(processes)
+        
+        # I don't know of a more convenient way to load all the modules we want
+        futures = Future[]
+        for pid in procs
+            for moduletoeval in modules
+                push!( futures, remotecall( Core.eval, pid, Main, Expr(:using,Expr(:.,moduletoeval)) ) )
+            end
+        end
+        for future in futures
+            wait(future)
+        end
+
+        pmap( submodel -> fit( submodel; kwargs... ), WorkerPool(procs), model.models )
+
+        rmprocs(procs)
     end
 end
 

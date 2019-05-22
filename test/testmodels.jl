@@ -30,7 +30,11 @@ Models.fit( hmm3, debug=2 )
 @assert( maximum( abs.(hmm2.model.stateparameters - hmm3.model.model.stateparameters) ) < 1e-8 )
 
 modeltype = Models.MultiStartModel{Models.FittableModel{Float64,HMMs.HMM{2,Normal,Brob,Float64}, typeof(HMMs.em)}}
-model = rand( modeltype, seeds=1:5 )
-Models.update( model, r )
-Models.fit( model, debug=2 )
+model1 = rand( modeltype, seeds=1:5 )
+Models.update( model1, r )
+Models.fit( model1, debug=2 )
+
+model2 = rand( modeltype, seeds=1:5 )
+Models.update( model2, r )
+Models.fit( model2, debug=2, processes=2, modules=[:HMMs,:Brobdingnag] )
 
