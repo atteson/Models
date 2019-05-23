@@ -31,7 +31,7 @@ Base.rand( ::Type{U} ) where {T,U <: AbstractModel{T}} = error( "rand not implem
 
 fit( M::AbstractModel ) = error( "fit not yet implemented for $(typeof(M))" )
 
-struct FittableModel{T, U <: AbstractModel{T},F <: Function} <: AbstractModel{T}
+struct FittableModel{T, U <: AbstractModel{T}, F <: Function} <: AbstractModel{T}
     model::U
 end
 
@@ -85,12 +85,12 @@ end
 
 date( model::LogReturnModel ) = model.lastdate
 
-mutable struct MultiStartModel{T,U <: AbstractModel{T}} <: AbstractModel{T}
+mutable struct MultiStartModel{T, U <: AbstractModel{T}} <: AbstractModel{T}
     models::Vector{U}
 end
 
 function Base.rand(
-    ::Type{MultiStartModel{U}};
+    ::Type{MultiStartModel{T,U}};
     seeds::AbstractVector{Int} = 1:1,
     kwargs...
 ) where {T, U <: AbstractModel{T}}
@@ -136,47 +136,50 @@ function fit(
 end
 
 mutable struct AdaptedModel{T,U <: AbstractModel{T}} <: DatedModel{T}
-    dates::Vector{Date}
+    modeldates::AbstractVector{Date}
     models::Vector{U}
     index::Int
-    lastprice::Float64
 end
 
-function AdaptedModel{T,U}( modeldir::String, d::Date ) where {T,U}
-    fileregex = r"_([0-9]{8})$"
-    dateformat = Dates.DateFormat( "yyyymmdd" )
-    dates = Date[]
-    models = T[]
-    for file in readdir(modeldir)
-        m = match( fileregex, file )
-        if m == nothing
-            error( "Couldn't match $file" )
-        end
-        push!( dates, Date( m.captures[1], dateformat ) )
+updatemodel( model::AbstractModel{T}, y::Tuple{Date, T} ) where {T} = update( model, y[2] )
 
-        open( joinpath( modeldir, file ), "r") do f
-            push!( models, read( f, T ) )
-        end
-        for model in models
-            initialize( model )
-        end
+function updatemodel( model::DatedModel{T}, y::Tuple{Date, T} ) where {T}
+    @assert( date( model ) < y[1] )
+    update( model, y )
+end
+
+function Base.rand( ::Type{AdaptedModel{T,U}}; modeldates::AbstractVector{Date} = Date[], kwargs... ) where {T,U}
+    model = rand( U; kwargs... )
+    return AdaptedModel( modeldates, [model], 0 )
+end
+
+function update( model::AdaptedModel, y::Tuple{Date, T} ) where {T}
+    for i = 1:length(models)
+        updatemodel( model.models[i], y )
     end
-
-    index = searchsorted( dates, d ).stop
-    if index == 0
-        error( "No model available at date $d" )
-    end
-    return AdaptedModel( dates, models, index )
-end    
-
-function update( model::AdaptedModel, d::Date, y::T ) where {T}
-    while model.index < length(model.dates) && model.dates[model.index+1] < d
+    if model.index < length(model.modeldates) && y[2] >= model.modeldates[model.index+1]
+        # we're expecting this to be true
+        @assert( model.index == length(model.models) )
+        push!( model.models, deepcopy( model.models[end] ) )
         model.index += 1
     end
-    update( model.models[model.index], y )
+        
 end
 
-Distributions.rand!( model::AdaptedModel, v::AbstractVector{Float64}, n::Int = length(v) ) =
-    Distributions.rand!( model.models[model.index], v, n )
+function fit( model::AdaptedModel{T,U}; kwargs... ) where {T,U}
+    index = 0
+    for i = 1:length(model.modeldates)
+        if length(models) < i
+            push!( model.models, deepcopy( model.models[end] ) )
+        end
+        date = model.modeldates[i]
+        nextindex = searchsorted( model.dates, date ).stop
+        for j = index+1:nextindex
+            updatemodel( model.models[end], (model.dates[j], model.observations[j]) )
+        end
+        fit( model.models[end]; kwargs... )
+        index = nextindex
+    end
+end
 
 end # module

@@ -38,7 +38,7 @@ hmmerr( hmm1, hmm2 ) =
 
 @assert( hmmerr( hmm2.model, hmm3.model.model ) .< 1e-8 )
 
-modeltype = Models.MultiStartModel{Models.FittableModel{Float64,HMMs.HMM{2,Normal,Brob,Float64}, typeof(HMMs.em)}}
+modeltype = Models.MultiStartModel{Float64,Models.FittableModel{Float64,HMMs.HMM{2,Normal,Brob,Float64}, typeof(HMMs.em)}}
 hmm4 = rand( modeltype, seeds=1:5 )
 Models.update( hmm4, y )
 Models.fit( hmm4, debug=2 )
