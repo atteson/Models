@@ -110,20 +110,18 @@ end
 
 function fit(
     model::MultiStartModel;
-    processes::Int = 1,
     modules::Vector{Symbol} = Symbol[],
     kwargs...
 )
-    if processes == 1
+    if nprocs() == 1
         for submodel in model.models
             fit( submodel; kwargs... )
         end
     else
-        procs = addprocs(processes)
         
         # I don't know of a more convenient way to load all the modules we want
         futures = Future[]
-        for pid in procs
+        for pid in workers()
             for moduletoeval in modules
                 push!( futures, remotecall( Core.eval, pid, Main, Expr(:using,Expr(:.,moduletoeval)) ) )
             end
@@ -132,9 +130,7 @@ function fit(
             wait(future)
         end
 
-        model.models = pmap( submodel -> fit( submodel; kwargs... ), WorkerPool(procs), model.models )
-
-        rmprocs(procs)
+        model.models = pmap( submodel -> fit( submodel; kwargs... ), model.models )
     end
     return model
 end
