@@ -139,6 +139,7 @@ mutable struct AdaptedModel{T,U <: AbstractModel{T}} <: DatedModel{T}
     modeldates::AbstractVector{Date}
     models::Vector{U}
     index::Int
+    lastdate::Date
 end
 
 updatemodel( model::AbstractModel{T}, y::Tuple{Date, T} ) where {T} = update( model, y[2] )
@@ -150,35 +151,24 @@ end
 
 function Base.rand( ::Type{AdaptedModel{T,U}}; modeldates::AbstractVector{Date} = Date[], kwargs... ) where {T,U}
     model = rand( U; kwargs... )
-    return AdaptedModel( modeldates, [model], 0 )
+    return AdaptedModel( modeldates, [model], 1, Date(0) )
 end
 
-function update( model::AdaptedModel, y::Tuple{Date, T} ) where {T}
-    for i = 1:length(models)
-        updatemodel( model.models[i], y )
+function update( model::AdaptedModel, y::Tuple{Date, T}; kwargs... ) where {T}
+    date = y[1]
+    currmodel = model.models[model.index]
+    updatemodel( currmodel, y )
+
+    if model.lastdate < model.modeldates[model.index] <= date
+        fit( currmodel; kwargs... )
     end
-    if model.index < length(model.modeldates) && y[2] >= model.modeldates[model.index+1]
-        # we're expecting this to be true
-        @assert( model.index == length(model.models) )
+
+    model.lastdate = date
+
+    if model.index < length(model.modeldates) && date >= model.modeldates[model.index+1]
+        @assert( length(model.models) == model.index )
         push!( model.models, deepcopy( model.models[end] ) )
         model.index += 1
-    end
-        
-end
-
-function fit( model::AdaptedModel{T,U}; kwargs... ) where {T,U}
-    index = 0
-    for i = 1:length(model.modeldates)
-        if length(models) < i
-            push!( model.models, deepcopy( model.models[end] ) )
-        end
-        date = model.modeldates[i]
-        nextindex = searchsorted( model.dates, date ).stop
-        for j = index+1:nextindex
-            updatemodel( model.models[end], (model.dates[j], model.observations[j]) )
-        end
-        fit( model.models[end]; kwargs... )
-        index = nextindex
     end
 end
 

@@ -52,7 +52,6 @@ Models.fit( hmm5, debug=2, modules=[:HMMs,:Brobdingnag] )
 errs = [hmmerr( hmm4.models[i].model, hmm5.models[i].model ) for i in 1:max(length(hmm4.models),length(hmm5.models))]
 @assert( all(isnan.(errs) .| (errs .== 0.0)) )
 
-
 modeltype = HMMs.HMM{2,HMMs.GenTDist,Brob,Float64}
 hmm6 = modeltype( [0.5, 0.5], [0.9 0.1;0.05 0.95], [-0.001 0.0005; 0.02 0.01; 5.0 7.0] )
 y2 = rand( hmm6, 5_000 )
