@@ -10,8 +10,7 @@ hmm1 = HMMs.HMM{2,Normal,Brob,Float64}( [0.5, 0.5], [0.9 0.1;0.05 0.95], [-0.001
 Random.seed!(1)
 y = rand( hmm1, 1_000 );
 
-Random.seed!(2)
-hmm2 = Models.FittableModel( rand( HMMs.HMM{2,Normal,Brob,Float64} ), HMMs.em )
+hmm2 = Models.FittableModel( rand( HMMs.HMM{2,Normal,Brob,Float64}, seed=2 ), HMMs.em )
 Models.update( hmm2, y )
 Models.fit( hmm2, debug=2 )
 
@@ -24,9 +23,8 @@ HMMs.reorder!( hmm2.model )
 
 p = exp.(cumsum(y))
 
-Random.seed!(2)
 firstdate = Date(2004, 7, 2)
-hmm3 = Models.LogReturnModel( Models.FittableModel( rand( HMMs.HMM{2,Normal,Brob,Float64} ), HMMs.em ), firstdate, 1.0 )
+hmm3 = Models.LogReturnModel( Models.FittableModel( rand( HMMs.HMM{2,Normal,Brob,Float64}, seed=2 ), HMMs.em ), firstdate, 1.0 )
 
 Models.update( hmm3, collect(zip(firstdate:Day(1):firstdate+Day(length(p)-1), p)) )
 Models.fit( hmm3, debug=2 )
@@ -38,14 +36,15 @@ hmmerr( hmm1, hmm2 ) =
 
 @assert( hmmerr( hmm2.model, hmm3.model.model ) .< 1e-8 )
 
-modeltype = Models.MultiStartModel{Float64,Models.FittableModel{Float64,HMMs.HMM{2,Normal,Brob,Float64}, typeof(HMMs.em)}}
-hmm4 = rand( modeltype, seeds=1:5, fitfunction = HMMs.em )
+models = [Models.FittableModel( rand( HMMs.HMM{2,Normal,Brob,Float64}, seed=seed ), HMMs.em ) for seed in 1:5]
+hmm4 = Models.MultiStartModel( models )
 Models.update( hmm4, y )
 @time Models.fit( hmm4, debug=2 );
 
 myworkers = addprocs(2)
 
-hmm5 = rand( modeltype, seeds=1:5 )
+models = [Models.FittableModel( rand( HMMs.HMM{2,Normal,Brob,Float64}, seed=seed ), HMMs.em ) for seed in 1:5]
+hmm5 = Models.MultiStartModel( models )
 Models.update( hmm5, y )
 Models.fit( hmm5, debug=2, modules=[:HMMs,:Brobdingnag] )
 
@@ -54,18 +53,14 @@ errs = [hmmerr( hmm4.models[i].model, hmm5.models[i].model ) for i in 1:max(leng
 
 rmprocs(myworkers)
 
-Random.seed!(1)
 hmmtype = HMMs.HMM{2,Normal,Brob,Float64}
-hmm6 = rand( hmmtype )
+hmm6 = rand( hmmtype, seed=1 )
 y = rand( hmm6, 10_000 )
 dates = map( i -> Date(1985,1,1) + Day(i), 1:length(y) )
 
 modeldates = dates[5_000]:Year(1):dates[10_000]
-
-modeltype = Models.AdaptedModel{Float64,Models.FittableModel{Float64, hmmtype, typeof(HMMs.em)}}
-model = rand( modeltype, modeldates=modeldates )
-
-Models.update( model, collect(zip(dates,y))[1:6_000], debug=2 )
+hmm7 = Models.AdaptedModel( modeldates = modeldates, rand( hmmtype, seed=2 ) )
+Models.update( hmm7, collect(zip(dates,y))[1:6_000], debug=2 )
 
 model.models
 

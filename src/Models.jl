@@ -19,7 +19,7 @@ function update( M::AbstractModel{T}, a::AbstractVector{T}; kwargs... ) where {T
 end
 
 Distributions.rand!( M::AbstractModel{T}, v::AbstractVector{T}, n::Int = length(v) ) where {T} =
-    error( "rand not yet implemented for $(typeof(M))" )
+    error( "rand! not yet implemented for $(typeof(M))" )
 
 function Base.rand( M::AbstractModel, n::Int; kwargs... )
     observations = zeros(n)
@@ -27,7 +27,7 @@ function Base.rand( M::AbstractModel, n::Int; kwargs... )
     return observations
 end
 
-Base.rand( ::Type{U} ) where {T,U <: AbstractModel{T}} = error( "rand not implemented for type $U" )
+Distributions.rand!( ::U ) where {T,U <: AbstractModel{T}} = error( "rand! not implemented for type $U" )
 
 fit( M::AbstractModel ) = error( "fit not yet implemented for $(typeof(M))" )
 
@@ -36,7 +36,7 @@ struct FittableModel{T, U <: AbstractModel{T}, F <: Function} <: AbstractModel{T
     f::F
 end
 
-FittableModel( model::U, f::F ) where {T,U <: AbstractModel{T}, F} = FittableModel{T,U,F}( model, f )
+#FittableModel( model::U, f::F ) where {T,U <: AbstractModel{T}, F} = FittableModel{T,U,F}( model, f )
 
 function fit( model::FittableModel{T,U,F}; kwargs... ) where {T,U,F}
     model.f( model.model; kwargs... )
@@ -45,8 +45,8 @@ end
 
 update( model::FittableModel{T}, y::T ) where {T} = update( model.model, y )
 
-Base.rand( ::Type{FittableModel{T,U,F}}; fitfunction::F = F.instance, kwargs... ) where {T, U, F} =
-    FittableModel( rand( U; kwargs... ), F.instance )
+Distributions.rand!( model::FittableModel{T,U,F}; kwargs... ) where {T, U, F} =
+    rand!( model.model; kwargs... )
 
 abstract type DatedModel{T} <: AbstractModel{Tuple{Date,T}}
 end
@@ -77,8 +77,8 @@ function Distributions.rand!( model::LogReturnModel, v::AbstractVector{Float64},
     end
 end
 
-Base.rand( ::Type{LogReturnModel{T}}; lastdate::Date = nothing, lastprice::Float64 = nothing, kwargs... ) where {T} =
-    LogReturnModel( rand( T; kwargs... ), lastdate, lastprice )
+Distributions.rand!( model::LogReturnModel{T}; kwargs... ) where {T} =
+    rand!( model.model; kwargs... )
 
 function fit( model::LogReturnModel; kwargs... )
     fit( model.model; kwargs... )
@@ -91,17 +91,23 @@ mutable struct MultiStartModel{T, U <: AbstractModel{T}} <: AbstractModel{T}
     models::Vector{U}
 end
 
-function Base.rand(
-    ::Type{MultiStartModel{T,U}};
-    seeds::AbstractVector{Int} = 1:1,
+function Distributions.rand!(
+    model::MultiStartModel{T,U};
+    seeds::AbstractVector{Int} = Int[],
     kwargs...
 ) where {T, U <: AbstractModel{T}}
-    models = U[]
-    for seed in seeds
-        Random.seed!( seed )
-        push!( models, rand( U; kwargs... ) )
+    n = length(model.models)
+    if !isempty( seeds )
+        @assert( n == length(seeds) )
+        for i = 1:n
+            rand!( model.models, seed=seeds[i] )
+        end
+    else
+        for i = 1:n
+            rand!( model.models )
+        end
     end
-    return MultiStartModel( models )
+    return model
 end
 
 function update( model::MultiStartModel{T,U}, y::T ) where {T,U}
@@ -150,9 +156,11 @@ function updatemodel( model::DatedModel{T}, y::Tuple{Date, T} ) where {T}
     update( model, y )
 end
 
-function Base.rand( ::Type{AdaptedModel{T,U}}; modeldates::AbstractVector{Date} = Date[], kwargs... ) where {T,U}
-    model = rand( U; kwargs... )
-    return AdaptedModel( modeldates, [model], Date(0) )
+function Distributions.rand!( model::AdaptedModel{T,U}; kwargs... ) where {T,U}
+    for submodel in model.models
+        rand!( submodel; kwargs... )
+    end
+    return model
 end
 
 function update( model::AdaptedModel{T,U}, y::Tuple{Date, T}; kwargs... ) where {T,U}
