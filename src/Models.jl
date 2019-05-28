@@ -12,9 +12,9 @@ initialize( M::AbstractModel ) = error( "initialize not yet implemented for $(ty
 
 update( M::AbstractModel{T}, y::T ) where {T} = error( "update not yet implemented for $(typeof(M))" )
 
-function update( M::AbstractModel{T}, a::AbstractVector{T} ) where {T}
+function update( M::AbstractModel{T}, a::AbstractVector{T}; kwargs... ) where {T}
     for x in a
-        update( M, x )
+        update( M, x; kwargs... )
     end
 end
 
@@ -33,18 +33,20 @@ fit( M::AbstractModel ) = error( "fit not yet implemented for $(typeof(M))" )
 
 struct FittableModel{T, U <: AbstractModel{T}, F <: Function} <: AbstractModel{T}
     model::U
+    f::F
 end
 
-FittableModel( model::U, ::F ) where {T,U <: AbstractModel{T}, F} = FittableModel{T,U,F}( model )
+FittableModel( model::U, f::F ) where {T,U <: AbstractModel{T}, F} = FittableModel{T,U,F}( model, f )
 
 function fit( model::FittableModel{T,U,F}; kwargs... ) where {T,U,F}
-    F.instance( model.model; kwargs... )
+    model.f( model.model; kwargs... )
     return model
 end
 
 update( model::FittableModel{T}, y::T ) where {T} = update( model.model, y )
 
-Base.rand( ::Type{FittableModel{T,U,F}}; kwargs... ) where {T, U, F} = FittableModel( rand( U; kwargs... ), F.instance )
+Base.rand( ::Type{FittableModel{T,U,F}}; fitfunction::F = F.instance, kwargs... ) where {T, U, F} =
+    FittableModel( rand( U; kwargs... ), F.instance )
 
 abstract type DatedModel{T} <: AbstractModel{Tuple{Date,T}}
 end
@@ -138,7 +140,6 @@ end
 mutable struct AdaptedModel{T,U <: AbstractModel{T}} <: DatedModel{T}
     modeldates::AbstractVector{Date}
     models::Vector{U}
-    index::Int
     lastdate::Date
 end
 
@@ -151,24 +152,26 @@ end
 
 function Base.rand( ::Type{AdaptedModel{T,U}}; modeldates::AbstractVector{Date} = Date[], kwargs... ) where {T,U}
     model = rand( U; kwargs... )
-    return AdaptedModel( modeldates, [model], 1, Date(0) )
+    return AdaptedModel( modeldates, [model], Date(0) )
 end
 
-function update( model::AdaptedModel, y::Tuple{Date, T}; kwargs... ) where {T}
+function update( model::AdaptedModel{T,U}, y::Tuple{Date, T}; kwargs... ) where {T,U}
     date = y[1]
-    currmodel = model.models[model.index]
-    updatemodel( currmodel, y )
+    updatemodel( model.models[end], y )
 
-    if model.lastdate < model.modeldates[model.index] <= date
-        fit( currmodel; kwargs... )
+    index = length(model.models)
+    if model.lastdate < model.modeldates[index] <= date
+        println( "Fitting current model at $date" )
+        fit( model.models[end]; kwargs... )
     end
 
     model.lastdate = date
 
-    if model.index < length(model.modeldates) && date >= model.modeldates[model.index+1]
-        @assert( length(model.models) == model.index )
+    if index < length(model.modeldates) && date >= model.modeldates[index+1]
+        @assert( length(model.models) == index )
         push!( model.models, deepcopy( model.models[end] ) )
-        model.index += 1
+        println( "Fitting next model at $date" )
+        fit( model.models[end]; kwargs... )
     end
 end
 
