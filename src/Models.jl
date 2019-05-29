@@ -37,7 +37,7 @@ struct FittableModel{T, U <: AbstractModel{T}, F <: Function} <: AbstractModel{T
     f::F
 end
 
-FittableModel( model::U, f::F ) where {T,U <: AbstractModel{T}, F} = FittableModel{T,U,F}( model, f )
+#FittableModel( model::U, f::F ) where {T,U <: AbstractModel{T}, F} = FittableModel{T,U,F}( model, f )
 
 function fit( model::FittableModel{T,U,F}; kwargs... ) where {T,U,F}
     model.f( model.model; kwargs... )
@@ -140,7 +140,7 @@ function fit(
     return model
 end
 
-mutable struct AdaptedModel{T,U <: AbstractModel{T}} <: DatedModel{T}
+mutable struct AdaptedModel{T,U <: DatedModel{T}} <: DatedModel{T}
     modeldates::AbstractVector{Date}
     models::Vector{U}
     lastdate::Date

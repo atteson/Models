@@ -83,12 +83,12 @@ dates = map( i -> Date(1985,1,1) + Day(i), 1:length(y) )
 
 modeldates = dates[5_000]:Year(1):dates[10_000]
 
-modeltype = Models.AdaptedModel{Float64,Models.FittableModel{Float64, hmmtype, typeof(HMMs.em)}}
-model = rand( modeltype, modeldates=modeldates )
+modeltype = Models.AdaptedModel{Float64,Models.LogReturnModel{Models.FittableModel{Float64, hmmtype, typeof(HMMs.em)}}}
+model = rand( modeltype, modeldates=modeldates, lastdate=dates[1], lastprice=exp(y[1]) )
 
-Models.update( model, collect(zip(dates,y))[1:6_000], debug=2 )
+Models.update( model, collect(zip(dates,exp.(y)))[2:6_000], debug=2 )
 
 model.models
 
 [findall(dates.==modeldate)[1] for modeldate in modeldates]
-[length(submodel.model.y) for submodel in model.models]
+[length(submodel.model.model.y) for submodel in model.models]
