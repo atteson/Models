@@ -5,6 +5,7 @@ using Dates
 using Distributions
 using Random
 using Distributed
+using Dependencies
 
 hmm1 = HMMs.HMM{2,Normal,Brob,Float64}( [0.5, 0.5], [0.9 0.1;0.05 0.95], [-0.001 0.0005;0.02 0.01] )
 Random.seed!(1)
@@ -54,10 +55,26 @@ errs = [hmmerr( hmm4.models[i].model, hmm5.models[i].model ) for i in 1:max(leng
 
 rmprocs(myworkers)
 
+hmm6 = rand( modeltype, seeds=1:50, fitfunction = HMMs.em )
+Models.update( hmm6, y )
+@time Models.fit( hmm6, debug=2 );
+# 4.6s
+
+fittablemodeltype = Models.FittableModel{Float64, modeltype, Dependencies.FunctionNode{typeof(Models.fit)}}
+hmm7 = rand( fittablemodeltype, seeds=1:50 )
+Models.update( hmm7, y )
+@time Models.fit( hmm7, debug=2 );
+# 5.1s
+
+hmm8 = rand( fittablemodeltype, seeds=1:50 )
+Models.update( hmm8, y )
+@time Models.fit( hmm8, debug=2 );
+# 0.4s
+
 Random.seed!(1)
 hmmtype = HMMs.HMM{2,Normal,Brob,Float64}
-hmm6 = rand( hmmtype )
-y = rand( hmm6, 10_000 )
+hmm9 = rand( hmmtype )
+y = rand( hmm9, 10_000 )
 dates = map( i -> Date(1985,1,1) + Day(i), 1:length(y) )
 
 modeldates = dates[5_000]:Year(1):dates[10_000]

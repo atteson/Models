@@ -41,6 +41,12 @@ uuid = "ade2ca70-3891-5945-98fb-dc099432e06a"
 deps = ["Mmap"]
 uuid = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 
+[[Dependencies]]
+deps = ["Base64", "Serialization"]
+path = "/home/atteson/myenvironment/dev/Dependencies/"
+uuid = "923bee96-8168-11e9-0825-c7771b6ebf8d"
+version = "0.0.0"
+
 [[Distributed]]
 deps = ["Random", "Serialization", "Sockets"]
 uuid = "8ba89e20-285c-5b6f-9357-94700520ee1b"

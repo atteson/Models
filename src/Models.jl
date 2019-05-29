@@ -4,6 +4,7 @@ using Dates
 using Distributions
 using Random
 using Distributed
+using Dependencies
 
 abstract type AbstractModel{T}
 end
@@ -45,8 +46,10 @@ end
 
 update( model::FittableModel{T}, y::T ) where {T} = update( model.model, y )
 
-Base.rand( ::Type{FittableModel{T,U,F}}; fitfunction::F = F.instance, kwargs... ) where {T, U, F} =
-    FittableModel( rand( U; kwargs... ), F.instance )
+Dependencies.getinstance( ::Type{F} ) where {F <: Function} = F.instance
+
+Base.rand( ::Type{FittableModel{T,U,F}}; fitfunction::F = Dependencies.getinstance( F ), kwargs... ) where {T, U, F} =
+    FittableModel( rand( U; kwargs... ), fitfunction )
 
 abstract type DatedModel{T} <: AbstractModel{Tuple{Date,T}}
 end
