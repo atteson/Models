@@ -60,7 +60,7 @@ Models.update( hmm6, y )
 @time Models.fit( hmm6, debug=2 );
 # 4.6s
 
-fittablemodeltype = Models.FittableModel{Float64, modeltype, Dependencies.FunctionNode{typeof(Models.fit)}}
+fittablemodeltype = Models.FittableModel{Float64, modeltype, FunctionNode{typeof(Models.fit)}}
 hmm7 = rand( fittablemodeltype, seeds=1:50 )
 Models.update( hmm7, y )
 @time Models.fit( hmm7, debug=2 );
@@ -71,10 +71,14 @@ Models.update( hmm8, y )
 @time Models.fit( hmm8, debug=2 );
 # 0.4s
 
+hmm9 = rand( fittablemodeltype, seeds=1:50 )
+Models.update( hmm9, y )
+delete!( hmm7.f, hmm9.model, debug=2 )
+
 Random.seed!(1)
 hmmtype = HMMs.HMM{2,Normal,Brob,Float64}
-hmm9 = rand( hmmtype )
-y = rand( hmm9, 10_000 )
+hmm10 = rand( hmmtype )
+y = rand( hmm10, 10_000 )
 dates = map( i -> Date(1985,1,1) + Day(i), 1:length(y) )
 
 modeldates = dates[5_000]:Year(1):dates[10_000]
