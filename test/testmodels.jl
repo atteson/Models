@@ -39,7 +39,9 @@ hmmerr( hmm1, hmm2 ) =
 
 @assert( hmmerr( hmm2.model, hmm3.model.model ) .< 1e-8 )
 
-modeltype = Models.MultiStartModel{Float64,Models.FittableModel{Float64,HMMs.HMM{2,Normal,Brob,Float64}, typeof(HMMs.em)}}
+hmmtype = Models.FittableModel{Float64, HMMs.HMM{2,Normal,Brob,Float64}, typeof(HMMs.em)}
+criterion = model -> HMMs.likelihood( model.model )
+modeltype = Models.MultiStartModel{Float64, hmmtype, typeof(criterion)}
 hmm4 = rand( modeltype, seeds=1:5, fitfunction = HMMs.em )
 Models.update( hmm4, y )
 @time Models.fit( hmm4, debug=2 );
@@ -76,14 +78,13 @@ Models.update( hmm9, y )
 delete!( hmm7.f, hmm9.model, debug=2 )
 
 Random.seed!(1)
-hmmtype = HMMs.HMM{2,Normal,Brob,Float64}
 hmm10 = rand( hmmtype )
 y = rand( hmm10, 10_000 )
 dates = map( i -> Date(1985,1,1) + Day(i), 1:length(y) )
 
 modeldates = dates[5_000]:Year(1):dates[10_000]
 
-modeltype = Models.AdaptedModel{Float64,Models.LogReturnModel{Models.FittableModel{Float64, hmmtype, typeof(HMMs.em)}}}
+modeltype = Models.AdaptedModel{Float64,Models.LogReturnModel{hmmtype}}
 model = rand( modeltype, modeldates=modeldates, lastdate=dates[1], lastprice=exp(y[1]) )
 
 Models.update( model, collect(zip(dates,exp.(y)))[2:6_000], debug=2 )

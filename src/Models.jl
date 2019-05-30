@@ -20,7 +20,7 @@ function update( M::AbstractModel{T}, a::AbstractVector{T}; kwargs... ) where {T
 end
 
 Distributions.rand!( M::AbstractModel{T}, v::AbstractVector{T}, n::Int = length(v) ) where {T} =
-    error( "rand not yet implemented for $(typeof(M))" )
+    error( "rand! not yet implemented for $(typeof(M))" )
 
 function Base.rand( M::AbstractModel, n::Int; kwargs... )
     observations = zeros(n)
@@ -37,8 +37,6 @@ struct FittableModel{T, U <: AbstractModel{T}, F <: Function} <: AbstractModel{T
     f::F
 end
 
-#FittableModel( model::U, f::F ) where {T,U <: AbstractModel{T}, F} = FittableModel{T,U,F}( model, f )
-
 function fit( model::FittableModel{T,U,F}; kwargs... ) where {T,U,F}
     model.f( model.model; kwargs... )
     return model
@@ -50,6 +48,9 @@ Dependencies.getinstance( ::Type{F} ) where {F <: Function} = F.instance
 
 Base.rand( ::Type{FittableModel{T,U,F}}; fitfunction::F = Dependencies.getinstance( F ), kwargs... ) where {T, U, F} =
     FittableModel( rand( U; kwargs... ), fitfunction )
+
+Distributions.rand!( model::FittableModel{T,U,F}, v::AbstractVector{T}, n::Int = length(v) ) where {T,U,F} =
+    rand!( model.model, v, n )
 
 abstract type DatedModel{T} <: AbstractModel{Tuple{Date,T}}
 end
@@ -90,34 +91,36 @@ end
 
 date( model::LogReturnModel ) = model.lastdate
 
-mutable struct MultiStartModel{T, U <: AbstractModel{T}} <: AbstractModel{T}
+mutable struct MultiStartModel{T, U <: AbstractModel{T}, F <: Function} <: AbstractModel{T}
     models::Vector{U}
+    criterion::F
+    optimumindex::Int
 end
 
 function Base.rand(
-    ::Type{MultiStartModel{T,U}};
+    ::Type{MultiStartModel{T,U,F}};
     seeds::AbstractVector{Int} = 1:1,
     kwargs...
-) where {T, U <: AbstractModel{T}}
+) where {T, U <: AbstractModel{T}, F}
     models = U[]
     for seed in seeds
         Random.seed!( seed )
         push!( models, rand( U; kwargs... ) )
     end
-    return MultiStartModel( models )
+    return MultiStartModel( models, Dependencies.getinstance( F ), 0 )
 end
 
-function update( model::MultiStartModel{T,U}, y::T ) where {T,U}
+function update( model::MultiStartModel{T,U,F}, y::T ) where {T,U,F}
     for submodel in model.models
         update( submodel, y )
     end
 end
 
 function fit(
-    model::MultiStartModel;
+    model::MultiStartModel{T,U,F};
     modules::Vector{Symbol} = Symbol[],
     kwargs...
-)
+) where {T,U,F}
     if nprocs() == 1
         for submodel in model.models
             fit( submodel; kwargs... )
@@ -137,8 +140,13 @@ function fit(
 
         model.models = pmap( submodel -> fit( submodel; kwargs... ), model.models )
     end
+    criteria = model.criterion.( model.models )
+    model.optimumindex = findmax( criteria )[2]
     return model
 end
+
+Distributions.rand!( model::MultiStartModel{T,U,F}, v::AbstractVector{Float64}, n::Int = length(v) ) where {T,U,F} =
+    rand!( model.models[model.optimumindex], v, n )
 
 mutable struct AdaptedModel{T,U <: DatedModel{T}} <: DatedModel{T}
     modeldates::AbstractVector{Date}
@@ -146,12 +154,7 @@ mutable struct AdaptedModel{T,U <: DatedModel{T}} <: DatedModel{T}
     lastdate::Date
 end
 
-updatemodel( model::AbstractModel{T}, y::Tuple{Date, T} ) where {T} = update( model, y[2] )
-
-function updatemodel( model::DatedModel{T}, y::Tuple{Date, T} ) where {T}
-    @assert( date( model ) < y[1] )
-    update( model, y )
-end
+date( model::AdaptedModel{T,U} ) where {T,U} = model.lastdate
 
 function Base.rand( ::Type{AdaptedModel{T,U}}; modeldates::AbstractVector{Date} = Date[], kwargs... ) where {T,U}
     model = rand( U; kwargs... )
@@ -159,23 +162,28 @@ function Base.rand( ::Type{AdaptedModel{T,U}}; modeldates::AbstractVector{Date} 
 end
 
 function update( model::AdaptedModel{T,U}, y::Tuple{Date, T}; kwargs... ) where {T,U}
-    date = y[1]
-    updatemodel( model.models[end], y )
+    @assert( date( model ) < y[1] )
+    update( model.models[end], y )
 
     index = length(model.models)
-    if model.lastdate < model.modeldates[index] <= date
-        println( "Fitting current model at $date" )
+    if model.lastdate < model.modeldates[index] <= y[1]
+        println( "Fitting current model at $(y[1])" )
         fit( model.models[end]; kwargs... )
     end
 
-    model.lastdate = date
+    model.lastdate = y[1]
 
-    if index < length(model.modeldates) && date >= model.modeldates[index+1]
+    if index < length(model.modeldates) && y[1] >= model.modeldates[index+1]
         @assert( length(model.models) == index )
         push!( model.models, deepcopy( model.models[end] ) )
-        println( "Fitting next model at $date" )
+        println( "Fitting next model at $(y[1])" )
         fit( model.models[end]; kwargs... )
     end
 end
 
+function Distributions.rand!( model::AdaptedModel{T,U}, v::AbstractVector{Float64}, n::Int = length(v) ) where {T,U}
+    index = searchsorted( model.modeldates, model.lastdate ).stop
+    return rand!( model.models[index], v, n )
+end
+    
 end # module
