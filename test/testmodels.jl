@@ -14,7 +14,7 @@ y = rand( hmm1, 1_000 );
 Random.seed!(2)
 hmm2 = Models.FittableModel( rand( HMMs.HMM{2,Normal,Brob,Float64} ), HMMs.em )
 Models.update( hmm2, y )
-Models.fit( hmm2, debug=2 )
+hmm2 = Models.fit( hmm2, debug=2 )
 
 relerr( x, y ) = abs(x - y)/(abs(x) + 1)
 

@@ -9,18 +9,11 @@ using Dependencies
 abstract type AbstractModel{T}
 end
 
-initialize( M::AbstractModel ) = error( "initialize not yet implemented for $(typeof(M))" )
-
-update( M::AbstractModel{T}, y::T ) where {T} = error( "update not yet implemented for $(typeof(M))" )
-
 function update( M::AbstractModel{T}, a::AbstractVector{T}; kwargs... ) where {T}
     for x in a
         update( M, x; kwargs... )
     end
 end
-
-Distributions.rand!( M::AbstractModel{T}, v::AbstractVector{T}, n::Int = length(v) ) where {T} =
-    error( "rand! not yet implemented for $(typeof(M))" )
 
 function Base.rand( M::AbstractModel, n::Int; kwargs... )
     observations = zeros(n)
@@ -28,19 +21,12 @@ function Base.rand( M::AbstractModel, n::Int; kwargs... )
     return observations
 end
 
-Base.rand( ::Type{U} ) where {T,U <: AbstractModel{T}} = error( "rand not implemented for type $U" )
-
-fit( M::AbstractModel ) = error( "fit not yet implemented for $(typeof(M))" )
-
 struct FittableModel{T, U <: AbstractModel{T}, F <: Function} <: AbstractModel{T}
     model::U
     f::F
 end
 
-function fit( model::FittableModel{T,U,F}; kwargs... ) where {T,U,F}
-    model.f( model.model; kwargs... )
-    return model
-end
+fit( model::FittableModel{T,U,F}; kwargs... ) where {T,U,F} = FittableModel( model.f( model.model; kwargs... ), model.f )
 
 update( model::FittableModel{T}, y::T ) where {T} = update( model.model, y )
 
@@ -52,12 +38,10 @@ Base.rand( ::Type{FittableModel{T,U,F}}; fitfunction::F = Dependencies.getinstan
 Distributions.rand!( model::FittableModel{T,U,F}, v::AbstractVector{T}, n::Int = length(v) ) where {T,U,F} =
     rand!( model.model, v, n )
 
+Dependencies.compress( model::FittableModel{T,U,F} ) where {T,U,F} = Dependencies.compress( model.model )
+
 abstract type DatedModel{T} <: AbstractModel{Tuple{Date,T}}
 end
-
-update( model::DatedModel{T}, y::Tuple{Date,T} ) where {T} = error( "update not yet implemented for $(typeof(M))" )
-    
-date( M::DatedModel ) = error( "date not yet implemented for $(typeof(M))" )
 
 mutable struct LogReturnModel{T <: AbstractModel{Float64}} <: DatedModel{Float64}
     model::T
@@ -73,8 +57,8 @@ function update( model::LogReturnModel, y::Tuple{Date,Float64} )
     model.lastprice = y[2]
 end
 
-function Distributions.rand!( model::LogReturnModel, v::AbstractVector{Float64}, n::Int = length(v) ) where {T}
-    rand!( model.model, v, n=n )
+function Distributions.rand!( model::LogReturnModel{T}, v::AbstractVector{Float64}, n::Int = length(v) ) where {T}
+    rand!( model.model, v, n )
     lastprice = model.lastprice
     for i = 1:n
         v[i] = lastprice *= exp( v[i] )
@@ -84,12 +68,11 @@ end
 Base.rand( ::Type{LogReturnModel{T}}; lastdate::Date = nothing, lastprice::Float64 = nothing, kwargs... ) where {T} =
     LogReturnModel( rand( T; kwargs... ), lastdate, lastprice )
 
-function fit( model::LogReturnModel; kwargs... )
-    fit( model.model; kwargs... )
-    return model
-end
+fit( model::LogReturnModel; kwargs... ) = LogReturnModel( fit( model.model; kwargs... ), model.lastdate, model.lastprice )
 
 date( model::LogReturnModel ) = model.lastdate
+
+Dependencies.compress( model::LogReturnModel{T} ) where {T} = Dependencies.compress( model.model )
 
 mutable struct MultiStartModel{T, U <: AbstractModel{T}, F <: Function} <: AbstractModel{T}
     models::Vector{U}
@@ -122,11 +105,11 @@ function fit(
     kwargs...
 ) where {T,U,F}
     if nprocs() == 1
-        for submodel in model.models
-            fit( submodel; kwargs... )
+        models = [fit( model.models[1]; kwargs... )]
+        for i = 2:length(model.models)
+            push!( models, fit( model.models[i]; kwargs... ) )
         end
     else
-        
         # I don't know of a more convenient way to load all the modules we want
         futures = Future[]
         for pid in workers()
@@ -138,15 +121,17 @@ function fit(
             wait(future)
         end
 
-        model.models = pmap( submodel -> fit( submodel; kwargs... ), model.models )
+        models = pmap( submodel -> fit( submodel; kwargs... ), model.models )
     end
     criteria = model.criterion.( model.models )
-    model.optimumindex = findmax( criteria )[2]
-    return model
+    optimumindex = findmax( criteria )[2]
+    return MultiStartModel( models, model.criterion, optimumindex )
 end
 
 Distributions.rand!( model::MultiStartModel{T,U,F}, v::AbstractVector{Float64}, n::Int = length(v) ) where {T,U,F} =
     rand!( model.models[model.optimumindex], v, n )
+
+Dependencies.compress( model::MultiStartModel{T,U,F} ) where {T,U,F} = Dependencies.compress.( model.models )
 
 mutable struct AdaptedModel{T,U <: DatedModel{T}} <: DatedModel{T}
     modeldates::AbstractVector{Date}
@@ -168,7 +153,7 @@ function update( model::AdaptedModel{T,U}, y::Tuple{Date, T}; kwargs... ) where 
     index = length(model.models)
     if model.lastdate < model.modeldates[index] <= y[1]
         println( "Fitting current model at $(y[1])" )
-        fit( model.models[end]; kwargs... )
+        model.models[end] = fit( model.models[end]; kwargs... )
     end
 
     model.lastdate = y[1]
@@ -177,13 +162,15 @@ function update( model::AdaptedModel{T,U}, y::Tuple{Date, T}; kwargs... ) where 
         @assert( length(model.models) == index )
         push!( model.models, deepcopy( model.models[end] ) )
         println( "Fitting next model at $(y[1])" )
-        fit( model.models[end]; kwargs... )
+        model.models[end] = fit( model.models[end]; kwargs... )
     end
 end
 
-function Distributions.rand!( model::AdaptedModel{T,U}, v::AbstractVector{Float64}, n::Int = length(v) ) where {T,U}
+function Distributions.rand!( model::AdaptedModel{T,U}, v::AbstractVector{T}, n::Int = length(v) ) where {T,U}
     index = searchsorted( model.modeldates, model.lastdate ).stop
     return rand!( model.models[index], v, n )
 end
-    
+
+Dependencies.compress( model::AdaptedModel{T,U} ) where {T,U} = Dependencies.compress.( model.models )
+
 end # module
