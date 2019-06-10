@@ -40,6 +40,8 @@ Distributions.rand!( model::FittableModel{T,U,F}, v::AbstractVector{T}, n::Int =
 
 Dependencies.compress( model::FittableModel{T,U,F} ) where {T,U,F} = Dependencies.compress( model.model )
 
+state( model::FittableModel{T,U,F} ) where {T,U,F} = state( model.model )
+
 abstract type DatedModel{T} <: AbstractModel{Tuple{Date,T}}
 end
 
@@ -73,6 +75,8 @@ fit( model::LogReturnModel; kwargs... ) = LogReturnModel( fit( model.model; kwar
 date( model::LogReturnModel ) = model.lastdate
 
 Dependencies.compress( model::LogReturnModel{T} ) where {T} = Dependencies.compress( model.model )
+
+state( model::LogReturnModel{T} ) where {T} = state( model.model )
 
 mutable struct MultiStartModel{T, U <: AbstractModel{T}, F <: Function} <: AbstractModel{T}
     models::Vector{U}
@@ -133,6 +137,8 @@ Distributions.rand!( model::MultiStartModel{T,U,F}, v::AbstractVector{Float64}, 
 
 Dependencies.compress( model::MultiStartModel{T,U,F} ) where {T,U,F} = Dependencies.compress.( model.models )
 
+state( model::MultiStartModel{T,U,F} ) where {T,U,F} = state( model.models[model.optimumindex] )
+
 mutable struct AdaptedModel{T,U <: DatedModel{T}} <: DatedModel{T}
     modeldates::AbstractVector{Date}
     models::Vector{U}
@@ -172,5 +178,10 @@ function Distributions.rand!( model::AdaptedModel{T,U}, v::AbstractVector{T}, n:
 end
 
 Dependencies.compress( model::AdaptedModel{T,U} ) where {T,U} = Dependencies.compress.( model.models )
+
+function state( model::AdaptedModel{T,U} ) where {T,U}
+    index = searchsorted( model.modeldates, model.lastdate ).stop
+    return state( model.models[index] )
+end
 
 end # module
