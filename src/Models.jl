@@ -21,6 +21,8 @@ function Base.rand( M::AbstractModel, n::Int; kwargs... )
     return observations
 end
 
+sandwich( M::AbstractModel ) = sandwich( rootmodel( M ) )
+
 struct FittableModel{T, U <: AbstractModel{T}, F <: Function} <: AbstractModel{T}
     model::U
     f::F
@@ -40,7 +42,11 @@ Distributions.rand!( model::FittableModel{T,U,F}, v::AbstractVector{T}, n::Int =
 
 Dependencies.compress( model::FittableModel{T,U,F} ) where {T,U,F} = Dependencies.compress( model.model )
 
+initialize( model::FittableModel{T,U,F}; kwargs... ) where {T,U,F} = initialize( model.model; kwargs... )
+
 state( model::FittableModel{T,U,F} ) where {T,U,F} = state( model.model )
+
+rootmodel( model::FittableModel{T,U,F} ) where {T,U,F} = rootmodel( model.model )
 
 abstract type DatedModel{T} <: AbstractModel{Tuple{Date,T}}
 end
@@ -50,8 +56,6 @@ mutable struct LogReturnModel{T <: AbstractModel{Float64}} <: DatedModel{Float64
     lastdate::Date
     lastprice::Float64
 end
-
-initialize( model::LogReturnModel ) = initialize( model.model )
 
 function update( model::LogReturnModel, y::Tuple{Date,Float64} )
     update( model.model, log(y[2]/model.lastprice) )
@@ -76,7 +80,15 @@ date( model::LogReturnModel ) = model.lastdate
 
 Dependencies.compress( model::LogReturnModel{T} ) where {T} = Dependencies.compress( model.model )
 
+function initialize( model::LogReturnModel{T}; lastdate::Date = Date(0), lastprice::Float64 = NaN ) where {T}
+    model.lastdate = lastdate
+    model.lastprice = lastprice
+    initialize( model.model )
+end
+
 state( model::LogReturnModel{T} ) where {T} = state( model.model )
+
+rootmodel( model::LogReturnModel{T} ) where {T} = rootmodel( model.model )
 
 mutable struct MultiStartModel{T, U <: AbstractModel{T}, F <: Function} <: AbstractModel{T}
     models::Vector{U}
@@ -137,9 +149,13 @@ Distributions.rand!( model::MultiStartModel{T,U,F}, v::AbstractVector{Float64}, 
 
 Dependencies.compress( model::MultiStartModel{T,U,F} ) where {T,U,F} = Dependencies.compress.( model.models )
 
+initialize( model::MultiStartModel{T,U,F}; kwargs... ) where {T,U,F} = initialize( model.models[model.optimumindex]; kwargs... )
+
 state( model::MultiStartModel{T,U,F} ) where {T,U,F} = state( model.models[model.optimumindex] )
 
-mutable struct AdaptedModel{T,U <: DatedModel{T}} <: DatedModel{T}
+rootmodel( model::MultiStartModel{T,U,F} ) where {T,U,F} = rootmodel( model.models[model.optimumindex] )
+
+mutable struct AdaptedModel{T, U <: DatedModel{T}} <: DatedModel{T}
     modeldates::AbstractVector{Date}
     models::Vector{U}
     lastdate::Date
@@ -179,9 +195,50 @@ end
 
 Dependencies.compress( model::AdaptedModel{T,U} ) where {T,U} = Dependencies.compress.( model.models )
 
+function initialize( model::AdaptedModel{T,U}; kwargs... ) where {T,U}
+    model.models = [model.models[1]]
+    initialize( model.models[end]; kwargs... )
+    model.lastdate = Date(0)
+end
+
 function state( model::AdaptedModel{T,U} ) where {T,U}
     index = searchsorted( model.modeldates, model.lastdate ).stop
     return state( model.models[index] )
+end
+
+function rootmodel( model::AdaptedModel{T,U} ) where {T,U}
+    index = searchsorted( model.modeldates, model.lastdate ).stop
+    return rootmodel( model.models[index] )
+end
+
+mutable struct RewindableModel{T, U <: DatedModel{T}} <: DatedModel{T}
+    model::U
+    dates::Vector{Date}
+    y::Vector{T}
+end
+
+Base.rand( ::Type{RewindableModel{T, U}}; kwargs... ) where {T,U} = RewindableModel( rand( U; kwargs... ), Date[], T[] )
+
+function update( model::RewindableModel{T,U}, y::Tuple{Date,T}; kwargs... ) where {T,U}
+    update( model.model, y; kwargs... )
+    push!( model.dates, y[1] )
+    push!( model.y, y[2] )
+end
+
+Distributions.rand!( model::RewindableModel{T,U}, v::AbstractVector{T}, n::Int = length(v) ) where {T,U} =
+    rand!( model.model, v, n )
+
+Dependencies.compress( model::RewindableModel{T,U} ) where {T,U} = Dependencies.compress( model.model )
+
+initialize( model::RewindableModel{T,U} ) where {T,U} = initialize( model.model )
+
+state( model::RewindableModel{T,U} ) where {T,U} = state( model.model )
+
+rootmodel( model::RewindableModel{T,U} ) where {T,U} = rootmodel( model.model )
+
+function reupdate( model::RewindableModel{T,U}; kwargs... ) where {T,U}
+    initialize( model.model, lastdate=model.dates[1], lastprice=model.y[1] )
+    update( model.model, collect(zip(model.dates, model.y))[2:end]; kwargs... )
 end
 
 end # module

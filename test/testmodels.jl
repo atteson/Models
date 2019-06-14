@@ -30,7 +30,7 @@ firstdate = Date(2004, 7, 2)
 hmm3 = Models.LogReturnModel( Models.FittableModel( rand( HMMs.HMM{2,Normal,Brob,Float64} ), HMMs.em ), firstdate, 1.0 )
 
 Models.update( hmm3, collect(zip(firstdate:Day(1):firstdate+Day(length(p)-1), p)) )
-Models.fit( hmm3, debug=2 )
+hmm3 = Models.fit( hmm3, debug=2 )
 
 hmmerr( hmm1, hmm2 ) = 
     max( maximum( abs.(hmm1.initialprobabilities - hmm2.initialprobabilities) ),
@@ -44,13 +44,13 @@ criterion = model -> HMMs.likelihood( model.model )
 modeltype = Models.MultiStartModel{Float64, hmmtype, typeof(criterion)}
 hmm4 = rand( modeltype, seeds=1:5, fitfunction = HMMs.em )
 Models.update( hmm4, y )
-@time Models.fit( hmm4, debug=2 );
+@time hmm4 = Models.fit( hmm4, debug=2 );
 
 myworkers = addprocs(2)
 
 hmm5 = rand( modeltype, seeds=1:5 )
 Models.update( hmm5, y )
-Models.fit( hmm5, debug=2, modules=[:HMMs,:Brobdingnag] )
+hmm5 = Models.fit( hmm5, debug=2, modules=[:HMMs,:Brobdingnag] )
 
 errs = [hmmerr( hmm4.models[i].model, hmm5.models[i].model ) for i in 1:max(length(hmm4.models),length(hmm5.models))]
 @assert( all(isnan.(errs) .| (errs .== 0.0)) )
@@ -59,18 +59,18 @@ rmprocs(myworkers)
 
 hmm6 = rand( modeltype, seeds=1:50, fitfunction = HMMs.em )
 Models.update( hmm6, y )
-@time Models.fit( hmm6, debug=2 );
+@time hmm6 = Models.fit( hmm6, debug=2 );
 # 4.6s
 
 fittablemodeltype = Models.FittableModel{Float64, modeltype, FunctionNode{typeof(Models.fit)}}
 hmm7 = rand( fittablemodeltype, seeds=1:50 )
 Models.update( hmm7, y )
-@time Models.fit( hmm7, debug=2 );
+@time hmm7 = Models.fit( hmm7, debug=2 );
 # 5.1s
 
 hmm8 = rand( fittablemodeltype, seeds=1:50 )
 Models.update( hmm8, y )
-@time Models.fit( hmm8, debug=2 );
+@time hmm8 = Models.fit( hmm8, debug=2 );
 # 0.4s
 
 hmm9 = rand( fittablemodeltype, seeds=1:50 )
@@ -93,3 +93,22 @@ model.models
 
 [findall(dates.==modeldate)[1] for modeldate in modeldates]
 [length(submodel.model.model.y) for submodel in model.models]
+
+Random.seed!(1)
+modeltype = Models.RewindableModel{Float64, Models.LogReturnModel{hmmtype}}
+model = rand( modeltype, lastdate=dates[1], lastprice=exp(y[1]) )
+y = rand( model, 10 );
+dates = map( i -> Date(1985,1,1) + Day(i), 1:length(y) )
+
+Models.update( model, collect(zip(dates,y))[2:5] )
+state1 = copy( Models.state( model ) )
+
+Models.update( model, collect(zip(dates,y))[6:10] )
+state2 = copy( Models.state( model ) )
+
+Models.reupdate( model )
+state3 = copy( Models.state( model ) )
+
+@assert( state1 != state2 )
+@assert( state3 == state2 )
+
