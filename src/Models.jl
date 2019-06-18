@@ -252,6 +252,9 @@ function reupdate( model::RewindableModel{T,U,V}; kwargs... ) where {T,U,V}
     update( model.model, model.t[2:end], model.u[2:end]; kwargs... )
 end
 
+fit( model::RewindableModel{T,U,V}; kwargs... ) where {T,U,V} =
+    RewindableModel( fit( model.model; kwargs... ), model.t, model.u )
+
 mutable struct ANModel{T, U, V <: AbstractModel{T,U}} <: AbstractModel{T,U}
     rootmodel::V
     models::Vector{V}
@@ -280,5 +283,14 @@ function Base.rand( model::ANModel{T,U,V} ) where {T,U,V}
     model.index += 1
     return model.models[index-1]
 end
+
+state( model::ANModel{T,U,V} ) where {T,U,V} = state( model.rootmodel )
+
+rootmodel( model::ANModel{T,U,V} ) where {T,U,V} = rootmodel( model.rootmodel )
+
+fit( model::ANModel{T,U,V}; kwargs... ) where {T,U,V} = ANModel( fit( model.rootmodel; kwargs... ), V[], 0 )
+
+Distributions.rand!( model::ANModel{T,U,V}, t::AbstractVector{T}, u::AbstractVector{U} ) where {T,U,V} =
+    rand!( model.rootmodel, t, u )
 
 end # module
