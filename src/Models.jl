@@ -275,7 +275,7 @@ function Base.rand( model::ANModel{T,U,V} ) where {T,U,V}
     if model.index > length(model.models)
         C = sandwich( model )
         mvn = MvNormal( zeros(size(C,1)), C )
-        newmodel = deepcopy( model.model )
+        newmodel = deepcopy( model.rootmodel )
         setcompressedparameters!( newmodel, getcompressedparameters( newmodel ) + rand( mvn ) )
         reupdate( newmodel )
         push!( model.models, newmodel )
