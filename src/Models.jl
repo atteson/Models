@@ -21,6 +21,12 @@ function Base.rand( M::AbstractModel{T,U}, t::AbstractVector{T}; kwargs... ) whe
     return observations
 end
 
+function Base.rand( M::Type{AbstractModel{T,U}}; t::AbstractVector{T} = T[], u::AbstractVector{U} = U[] ) where {T,U}
+    model = rand( M )
+    n = initializationcount( M )
+    initialize( model, t[end-n+1:end], u[end-n+1:end] )
+end
+
 sandwich( M::AbstractModel ) = sandwich( rootmodel( M ) )
 
 getcompressedparameters( M::AbstractModel ) = getcompressedparameters( rootmodel( M ) )
@@ -38,7 +44,7 @@ update( model::FittableModel{T,U,V,F}, t::T, u::U ) where {T,U,V,F} = update( mo
 
 Dependencies.getinstance( ::Type{F} ) where {F <: Function} = F.instance
 
-Base.rand( ::Type{FittableModel{T,U,V,F}}; fitfunction::F = Dependencies.getinstance( F ), kwargs... ) where {T, U, V, F} =
+rand( ::Type{FittableModel{T,U,V,F}}; fitfunction::F = Dependencies.getinstance( F ), kwargs... ) where {T, U, V, F} =
     FittableModel( rand( V; kwargs... ), fitfunction )
 
 Distributions.rand!( model::FittableModel{T,U,V,F}, t::AbstractVector{T}, u::AbstractVector{U} ) where {T,U,V,F} =
@@ -48,47 +54,51 @@ Dependencies.compress( model::FittableModel{T,U,V,F} ) where {T,U,V,F} = Depende
 
 initialize( model::FittableModel{T,U,V,F}; kwargs... ) where {T,U,V,F} = initialize( model.model; kwargs... )
 
+initializationcount( model::Type{FittableModel{T,U,V,F}} ) where {T,U,V,F} = initializationcount( V )
+
 state( model::FittableModel{T,U,V,F} ) where {T,U,V,F} = state( model.model )
 
 rootmodel( model::FittableModel{T,U,V,F} ) where {T,U,V,F} = rootmodel( model.model )
 
-Base.rand( model::FittableModel{T,U,V,F} ) where {T,U,V,F} = rand( model.model )
+Base.rand( model::FittableModel{T,U,V,F} ) where {T,U,V,F} = Base.rand( model.model )
 
 mutable struct LogReturnModel{T,V <: AbstractModel{T,Float64}} <: AbstractModel{T,Float64}
     model::V
-    lastprice::Float64
+    lastprice::Vector{Float64}
 end
 
 function update( model::LogReturnModel{T,V}, t::T, u::Float64 ) where {T,V}
-    update( model.model, t, log(u/model.lastprice) )
-    model.lastprice = u
+    update( model.model, t, log(u/model.lastprice[1]) )
+    model.lastprice[1] = u
 end
 
 function Distributions.rand!( model::LogReturnModel{T,V}, t::AbstractVector{T}, u::AbstractVector{Float64} ) where {T,V}
     rand!( model.model, t, u )
-    lastprice = model.lastprice
+    lastprice = model.lastprice[1]
     for i = 1:length(t)
         u[i] = lastprice *= exp( u[i] )
     end
 end
 
-Base.rand( ::Type{LogReturnModel{T,V}}; lastprice::Float64 = nothing, kwargs... ) where {T,V} =
-    LogReturnModel( rand( V; kwargs... ), lastprice )
+rand( ::Type{LogReturnModel{T,V}}; kwargs... ) where {T,V} = LogReturnModel( rand( V; kwargs... ), Float64[] )
 
 fit( model::LogReturnModel; kwargs... ) = LogReturnModel( fit( model.model; kwargs... ), model.lastprice )
 
 Dependencies.compress( model::LogReturnModel{T,V} ) where {T,V} = Dependencies.compress( model.model )
 
-function initialize( model::LogReturnModel{T,V}; lastprice::Float64 = NaN ) where {T,V}
-    model.lastprice = lastprice
-    initialize( model.model )
+initializationcount( model::LogReturnModel{T,V} ) where {T,V} = max(initializationcount( V ), 1)
+
+function initialize( model::LogReturnModel{T,V};
+                     t::AbstractVector{T} = T[], u::AbstractVector{Float64} = Float64[] ) where {T,V}
+    model.lastprice = u
+    initialize( model.model, t=t, u=u )
 end
 
 state( model::LogReturnModel{T,V} ) where {T,V} = state( model.model )
 
 rootmodel( model::LogReturnModel{T,V} ) where {T,V} = rootmodel( model.model )
 
-Base.rand( model::LogReturnModel{T,V} ) where {T,V} = rand( model.model )
+Base.rand( model::LogReturnModel{T,V} ) where {T,V} = Base.rand( model.model )
 
 mutable struct MultiStartModel{T, U, V <: AbstractModel{T,U}, F <: Function} <: AbstractModel{T,U}
     models::Vector{V}
@@ -96,7 +106,7 @@ mutable struct MultiStartModel{T, U, V <: AbstractModel{T,U}, F <: Function} <: 
     optimumindex::Int
 end
 
-function Base.rand(
+function rand(
     ::Type{MultiStartModel{T,U,V,F}};
     seeds::AbstractVector{Int} = 1:1,
     kwargs...
@@ -149,6 +159,9 @@ Distributions.rand!( model::MultiStartModel{T,U,V,F}, t::AbstractVector{T}, u::A
 
 Dependencies.compress( model::MultiStartModel{T,U,V,F} ) where {T,U,V,F} = Dependencies.compress.( model.models )
 
+# assume they're all the same
+initializationcount( model::Type{MultiStartModel{T,U,V,F}} ) where {T,U,V,F} = initializationcount( V )
+
 initialize( model::MultiStartModel{T,U,V,F}; kwargs... ) where {T,U,V,F} =
     initialize( model.models[model.optimumindex]; kwargs... )
 
@@ -161,24 +174,24 @@ Base.rand( model::MultiStartModel{T,U,V,F} ) where {T,U,V,F} = rand( model.model
 mutable struct AdaptedModel{T, U, V <: AbstractModel{T,U}} <: AbstractModel{T,U}
     modelperiods::AbstractVector{T}
     models::Vector{V}
-    lastperiod::T
+    lastperiod::Vector{T}
 end
 
-function Base.rand( ::Type{AdaptedModel{T,U,V}}; modelperiods::AbstractVector{T} = T[], kwargs... ) where {T,U,V}
+function rand( ::Type{AdaptedModel{T,U,V}}; modelperiods::AbstractVector{T} = T[], kwargs... ) where {T,U,V}
     model = rand( V; kwargs... )
-    return AdaptedModel( modelperiods, [model], T(0) )
+    return AdaptedModel( modelperiods, [model], T[] )
 end
 
 function update( model::AdaptedModel{T,U,V}, t::T, u::U; kwargs... ) where {T,U,V}
     update( model.models[end], t, u )
 
     index = length(model.models)
-    if model.lastperiod < model.modelperiods[index] <= t
+    if model.lastperiod[1] < model.modelperiods[index] <= t
         println( "Fitting current model at $t" )
         model.models[end] = fit( model.models[end]; kwargs... )
     end
 
-    model.lastperiod = t
+    model.lastperiod[1] = t
 
     if index < length(model.modelperiods) && t >= model.modelperiods[index+1]
         @assert( length(model.models) == index )
@@ -195,10 +208,12 @@ end
 
 Dependencies.compress( model::AdaptedModel{T,U,V} ) where {T,U,V} = Dependencies.compress.( model.models )
 
-function initialize( model::AdaptedModel{T,U,V}; kwargs... ) where {T,U,V}
+initializationcount( model::Type{AdaptedModel{T,U,V}} ) where {T,U,V} = max( initializationcount( V ), 1 )
+
+function initialize( model::AdaptedModel{T,U,V}; t::AbstractVector{T}, kwargs... ) where {T,U,V}
     model.models = [model.models[1]]
-    initialize( model.models[end]; kwargs... )
-    model.lastperiod = T(0)
+    initialize( model.models[end]; t=t, kwargs... )
+    model.lastperiod = t[end:end]
 end
 
 function state( model::AdaptedModel{T,U,V} ) where {T,U,V}
@@ -213,7 +228,7 @@ end
 
 function Base.rand( model::AdaptedModel{T,U,V} ) where {T,U,V}
     index = searchsorted( model.modelperiods, model.lastperiod ).stop
-    return rand( model.models[index] )
+    return Base.rand( model.models[index] )
 end
 
 mutable struct RewindableModel{T, U, V <: AbstractModel{T,U}} <: AbstractModel{T,U}
@@ -222,7 +237,7 @@ mutable struct RewindableModel{T, U, V <: AbstractModel{T,U}} <: AbstractModel{T
     u::Vector{U}
 end
 
-Base.rand( ::Type{RewindableModel{T, U, V}}; kwargs... ) where {T,U,V} = RewindableModel( rand( V; kwargs... ), T[], U[] )
+rand( ::Type{RewindableModel{T, U, V}}; kwargs... ) where {T,U,V} = RewindableModel( rand( V; kwargs... ), T[], U[] )
 
 function update( model::RewindableModel{T,U,V}, t::T, u::U; kwargs... ) where {T,U,V}
     update( model.model, t, u; kwargs... )
@@ -235,10 +250,12 @@ Distributions.rand!( model::RewindableModel{T,U,V}, t::AbstractVector{T}, u::Abs
 
 Dependencies.compress( model::RewindableModel{T,U,V} ) where {T,U,V} = Dependencies.compress( model.model )
 
-function initialize( model::RewindableModel{T,U,V} ) where {T,U,V}
+initializationcount( model::Type{RewindableModel{T,U,V}} ) where {T,U,V} = initializationcount( V )
+
+function initialize( model::RewindableModel{T,U,V}; kwargs... ) where {T,U,V}
     t = T[]
     u = U[]
-    initialize( model.model )
+    initialize( model.model; kwargs... )
 end
 
 state( model::RewindableModel{T,U,V} ) where {T,U,V} = state( model.model )
@@ -261,7 +278,7 @@ mutable struct ANModel{T, U, V <: AbstractModel{T,U}} <: AbstractModel{T,U}
     index::Int
 end
 
-Base.rand( ::Type{ANModel{T,U,V}}; kwargs... ) where {T,U,V} = ANModel{T,U,V}( rand( V; kwargs... ), V[], 1 )
+rand( ::Type{ANModel{T,U,V}}; kwargs... ) where {T,U,V} = ANModel{T,U,V}( rand( V; kwargs... ), V[], 1 )
 
 function update( model::ANModel{T,U,V}, t::T, u::U; kwargs... ) where {T,U,V}
     update( model.rootmodel, t, u; kwargs... )
