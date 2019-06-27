@@ -26,7 +26,7 @@ HMMs.reorder!( hmm2.model )
 p = exp.(cumsum(y))
 
 Random.seed!(2)
-hmm3 = Models.LogReturnModel( Models.FittableModel( rand( HMMs.HMM{2,Normal,Brob,Float64,Date} ), HMMs.em ), 1.0 )
+hmm3 = Models.LogReturnModel( Models.FittableModel( rand( HMMs.HMM{2,Normal,Brob,Float64,Date} ), HMMs.em ), [1.0] )
 
 firstdate = Date(1985,1,1)
 Models.update( hmm3, firstdate:Day(1):firstdate+Day(length(p)-1), p )
@@ -86,7 +86,7 @@ modeldates = dates[5_000]:Year(1):dates[10_000]
 
 hmmtype = Models.FittableModel{Date, Float64, HMMs.HMM{2,Normal,Brob,Float64,Date}, typeof(HMMs.em)}
 modeltype = Models.AdaptedModel{Date,Float64,Models.LogReturnModel{Date,hmmtype}}
-model = rand( modeltype, modelperiods=modeldates, lastprice=exp(y[1]) )
+model = rand( modeltype, modelperiods=modeldates, t=dates[1:1], u=[exp(y[1])] )
 
 Models.update( model, dates[2:6_000], exp.(y)[2:6_000], debug=2 )
 
@@ -97,7 +97,7 @@ model.models
 
 Random.seed!(1)
 modeltype = Models.RewindableModel{Date, Float64, Models.LogReturnModel{Date, hmmtype}}
-model = rand( modeltype, lastprice=exp(y[1]) )
+model = rand( modeltype, u=[exp(y[1])] )
 y = rand( model, modeldates[1:10] );
 
 Models.update( model, modeldates[2:5], y[2:5] )

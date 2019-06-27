@@ -21,10 +21,14 @@ function Base.rand( M::AbstractModel{T,U}, t::AbstractVector{T}; kwargs... ) whe
     return observations
 end
 
-function Base.rand( M::Type{AbstractModel{T,U}}; t::AbstractVector{T} = T[], u::AbstractVector{U} = U[] ) where {T,U}
-    model = rand( M )
-    n = initializationcount( M )
-    initialize( model, t[end-n+1:end], u[end-n+1:end] )
+domaintype( ::Type{V} ) where {T,U,V <: AbstractModel{T,U}} = T
+
+rangetype( ::Type{V} ) where {T,U,V <: AbstractModel{T,U}} = U
+
+function Base.rand( M::Type{V}; t = domaintype(V)[], u = rangetype(V)[], kwargs... ) where {T,U,V <: AbstractModel{T,U}}
+    model = rand( M; kwargs... )
+    initialize( model, t, u )
+    return model
 end
 
 sandwich( M::AbstractModel ) = sandwich( rootmodel( M ) )
@@ -52,9 +56,9 @@ Distributions.rand!( model::FittableModel{T,U,V,F}, t::AbstractVector{T}, u::Abs
 
 Dependencies.compress( model::FittableModel{T,U,V,F} ) where {T,U,V,F} = Dependencies.compress( model.model )
 
-initialize( model::FittableModel{T,U,V,F}; kwargs... ) where {T,U,V,F} = initialize( model.model; kwargs... )
+initialize( model::FittableModel{T,U,V,F}, args... ) where {T,U,V,F} = initialize( model.model, args... )
 
-initializationcount( model::Type{FittableModel{T,U,V,F}} ) where {T,U,V,F} = initializationcount( V )
+initializationcount( ::Type{FittableModel{T,U,V,F}} ) where {T,U,V,F} = initializationcount( V )
 
 state( model::FittableModel{T,U,V,F} ) where {T,U,V,F} = state( model.model )
 
@@ -86,12 +90,11 @@ fit( model::LogReturnModel; kwargs... ) = LogReturnModel( fit( model.model; kwar
 
 Dependencies.compress( model::LogReturnModel{T,V} ) where {T,V} = Dependencies.compress( model.model )
 
-initializationcount( model::LogReturnModel{T,V} ) where {T,V} = max(initializationcount( V ), 1)
+initializationcount( ::Type{LogReturnModel{T,V}} ) where {T,V} = max(initializationcount( V ), 1)
 
-function initialize( model::LogReturnModel{T,V};
-                     t::AbstractVector{T} = T[], u::AbstractVector{Float64} = Float64[] ) where {T,V}
-    model.lastprice = u
-    initialize( model.model, t=t, u=u )
+function initialize( model::LogReturnModel{T,V}, t::AbstractVector{T} = T[], u::AbstractVector{Float64} = Float64[] ) where {T,V}
+    model.lastprice = u[end:end]
+    initialize( model.model, t, u )
 end
 
 state( model::LogReturnModel{T,V} ) where {T,V} = state( model.model )
@@ -162,8 +165,16 @@ Dependencies.compress( model::MultiStartModel{T,U,V,F} ) where {T,U,V,F} = Depen
 # assume they're all the same
 initializationcount( model::Type{MultiStartModel{T,U,V,F}} ) where {T,U,V,F} = initializationcount( V )
 
-initialize( model::MultiStartModel{T,U,V,F}; kwargs... ) where {T,U,V,F} =
-    initialize( model.models[model.optimumindex]; kwargs... )
+function initialize( model::MultiStartModel{T,U,V,F}, t::AbstractVector{T}, u::AbstractVector{U} ) where {T,U,V,F}
+    if model.optimumindex == 0
+        # if we haven't yet worked out which model is optimal, we need to initialize them all
+        for submodel in model.models
+            initialize( submodel, t, u )
+        end
+    else
+        initialize( model.models[model.optimumindex], t, u )
+    end
+end
 
 state( model::MultiStartModel{T,U,V,F} ) where {T,U,V,F} = state( model.models[model.optimumindex] )
 
@@ -210,9 +221,9 @@ Dependencies.compress( model::AdaptedModel{T,U,V} ) where {T,U,V} = Dependencies
 
 initializationcount( model::Type{AdaptedModel{T,U,V}} ) where {T,U,V} = max( initializationcount( V ), 1 )
 
-function initialize( model::AdaptedModel{T,U,V}; t::AbstractVector{T}, kwargs... ) where {T,U,V}
+function initialize( model::AdaptedModel{T,U,V}, t::AbstractVector{T}, args... ) where {T,U,V}
     model.models = [model.models[1]]
-    initialize( model.models[end]; t=t, kwargs... )
+    initialize( model.models[end], t, args... )
     model.lastperiod = t[end:end]
 end
 
@@ -252,11 +263,7 @@ Dependencies.compress( model::RewindableModel{T,U,V} ) where {T,U,V} = Dependenc
 
 initializationcount( model::Type{RewindableModel{T,U,V}} ) where {T,U,V} = initializationcount( V )
 
-function initialize( model::RewindableModel{T,U,V}; kwargs... ) where {T,U,V}
-    t = T[]
-    u = U[]
-    initialize( model.model; kwargs... )
-end
+initialize( model::RewindableModel{T,U,V}, args... ) where {T,U,V} = initialize( model.model, args... )
 
 state( model::RewindableModel{T,U,V} ) where {T,U,V} = state( model.model )
 
@@ -265,8 +272,9 @@ rootmodel( model::RewindableModel{T,U,V} ) where {T,U,V} = rootmodel( model.mode
 Base.rand( model::RewindableModel{T,U,V} ) where {T,U,V} = rand( model.model )
 
 function reupdate( model::RewindableModel{T,U,V}; kwargs... ) where {T,U,V}
-    initialize( model.model, lastprice=model.u[1] )
-    update( model.model, model.t[2:end], model.u[2:end]; kwargs... )
+    n = initializationcount( V )
+    initialize( model.model, model.t[1:n], model.u[1:n] )
+    update( model.model, model.t[n+1:end], model.u[n+1:end]; kwargs... )
 end
 
 fit( model::RewindableModel{T,U,V}; kwargs... ) where {T,U,V} =
