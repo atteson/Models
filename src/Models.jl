@@ -213,7 +213,7 @@ function update( model::AdaptedModel{T,U,V}, t::T, u::U; kwargs... ) where {T,U,
 end
 
 function Distributions.rand!( model::AdaptedModel{T,U,V}, t::AbstractVector{T}, u::AbstractVector{U} ) where {T,U,V}
-    index = searchsorted( model.modelperiods, model.lastperiod ).stop
+    index = searchsorted( model.modelperiods, model.lastperiod[1] ).stop
     return rand!( model.models[index], t, u )
 end
 
@@ -228,17 +228,17 @@ function initialize( model::AdaptedModel{T,U,V}, t::AbstractVector{T}, args... )
 end
 
 function state( model::AdaptedModel{T,U,V} ) where {T,U,V}
-    index = searchsorted( model.modelperiods, model.lastperiod ).stop
+    index = searchsorted( model.modelperiods, model.lastperiod[1] ).stop
     return state( model.models[index] )
 end
 
 function rootmodel( model::AdaptedModel{T,U,V} ) where {T,U,V}
-    index = searchsorted( model.modelperiods, model.lastperiod ).stop
+    index = searchsorted( model.modelperiods, model.lastperiod[1] ).stop
     return rootmodel( model.models[index] )
 end
 
 function Base.rand( model::AdaptedModel{T,U,V} ) where {T,U,V}
-    index = searchsorted( model.modelperiods, model.lastperiod ).stop
+    index = searchsorted( model.modelperiods, model.lastperiod[1] ).stop
     return Base.rand( model.models[index] )
 end
 
@@ -308,6 +308,10 @@ function Base.rand( model::ANModel{T,U,V} ) where {T,U,V}
     model.index += 1
     return model.models[index-1]
 end
+
+initializationcount( model::Type{ANModel{T,U,V}} ) where {T,U,V} = initializationcount( V )
+
+initialize( model::ANModel{T,U,V}, args... ) where {T,U,V} = initialize( model.rootmodel, args... )
 
 state( model::ANModel{T,U,V} ) where {T,U,V} = state( model.rootmodel )
 
