@@ -284,9 +284,10 @@ mutable struct ANModel{T, U, V <: AbstractModel{T,U}} <: AbstractModel{T,U}
     rootmodel::V
     models::Vector{V}
     index::Int
+    distribution::Vector{Distribution}
 end
 
-rand( ::Type{ANModel{T,U,V}}; kwargs... ) where {T,U,V} = ANModel{T,U,V}( rand( V; kwargs... ), V[], 1 )
+rand( ::Type{ANModel{T,U,V}}; kwargs... ) where {T,U,V} = ANModel{T,U,V}( rand( V; kwargs... ), V[], 1, Distribution[] )
 
 function update( model::ANModel{T,U,V}, t::T, u::U; kwargs... ) where {T,U,V}
     update( model.rootmodel, t, u; kwargs... )
@@ -298,10 +299,12 @@ end
 
 function Base.rand( model::ANModel{T,U,V} ) where {T,U,V}
     if model.index > length(model.models)
-        C = sandwich( model )
-        mvn = MvNormal( zeros(size(C,1)), C )
+        if isempty(model.distribution)
+            C = sandwich( model )
+            model.distribution = [MvNormal( zeros(size(C,1)), C )]
+        end
         newmodel = deepcopy( model.rootmodel )
-        setcompressedparameters!( newmodel, getcompressedparameters( newmodel ) + Base.rand( mvn ) )
+        setcompressedparameters!( newmodel, getcompressedparameters( newmodel ) + Base.rand( model.distribution[1] ) )
         reupdate( newmodel )
         push!( model.models, newmodel )
     end
@@ -317,7 +320,7 @@ state( model::ANModel{T,U,V} ) where {T,U,V} = state( model.rootmodel )
 
 rootmodel( model::ANModel{T,U,V} ) where {T,U,V} = rootmodel( model.rootmodel )
 
-fit( model::ANModel{T,U,V}; kwargs... ) where {T,U,V} = ANModel( fit( model.rootmodel; kwargs... ), V[], 0 )
+fit( model::ANModel{T,U,V}; kwargs... ) where {T,U,V} = ANModel( fit( model.rootmodel; kwargs... ), V[], 0, Distribution[] )
 
 Distributions.rand!( model::ANModel{T,U,V}, t::AbstractVector{T}, u::AbstractVector{U} ) where {T,U,V} =
     rand!( model.rootmodel, t, u )
