@@ -205,7 +205,6 @@ function update( model::AdaptedModel{T,U,V}, t::T, u::U; kwargs... ) where {T,U,
     model.lastperiod[1] = t
 
     if index < length(model.modelperiods) && t >= model.modelperiods[index+1]
-        @assert( length(model.models) == index )
         push!( model.models, deepcopy( model.models[end] ) )
         println( "Fitting next model at $t" )
         model.models[end] = fit( model.models[end]; kwargs... )
@@ -284,10 +283,10 @@ mutable struct ANModel{T, U, V <: AbstractModel{T,U}} <: AbstractModel{T,U}
     rootmodel::V
     models::Vector{V}
     index::Int
-    distribution::Vector{Distribution}
+    transformation::Matrix{Float64}
 end
 
-rand( ::Type{ANModel{T,U,V}}; kwargs... ) where {T,U,V} = ANModel{T,U,V}( rand( V; kwargs... ), V[], 1, Distribution[] )
+rand( ::Type{ANModel{T,U,V}}; kwargs... ) where {T,U,V} = ANModel{T,U,V}( rand( V; kwargs... ), V[], 1, zeros(0,0) )
 
 function update( model::ANModel{T,U,V}, t::T, u::U; kwargs... ) where {T,U,V}
     update( model.rootmodel, t, u; kwargs... )
@@ -299,12 +298,13 @@ end
 
 function Base.rand( model::ANModel{T,U,V} ) where {T,U,V}
     if model.index > length(model.models)
-        if isempty(model.distribution)
+        if isempty(model.transformation)
             C = sandwich( model )
-            model.distribution = [MvNormal( zeros(size(C,1)), C )]
+            model.transformation = real.(sqrt(C))
         end
         newmodel = deepcopy( model.rootmodel )
-        setcompressedparameters!( newmodel, getcompressedparameters( newmodel ) + Base.rand( model.distribution[1] ) )
+        n = size(model.transformation,1)
+        setcompressedparameters!( newmodel, getcompressedparameters( newmodel ) + model.transformation * randn(n) )
         reupdate( newmodel )
         push!( model.models, newmodel )
     end
@@ -320,7 +320,7 @@ state( model::ANModel{T,U,V} ) where {T,U,V} = state( model.rootmodel )
 
 rootmodel( model::ANModel{T,U,V} ) where {T,U,V} = rootmodel( model.rootmodel )
 
-fit( model::ANModel{T,U,V}; kwargs... ) where {T,U,V} = ANModel( fit( model.rootmodel; kwargs... ), V[], 0, Distribution[] )
+fit( model::ANModel{T,U,V}; kwargs... ) where {T,U,V} = ANModel( fit( model.rootmodel; kwargs... ), V[], 1, zeros(0,0) )
 
 Distributions.rand!( model::ANModel{T,U,V}, t::AbstractVector{T}, u::AbstractVector{U} ) where {T,U,V} =
     rand!( model.rootmodel, t, u )
