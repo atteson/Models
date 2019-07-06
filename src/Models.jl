@@ -6,10 +6,10 @@ using Random
 using Distributed
 using Dependencies
 
-include( "DistributionModels.jl" )
-
 abstract type AbstractModel{T,U}
 end
+
+include( "DistributionModels.jl" )
 
 function update( M::AbstractModel{T}, t::AbstractVector{T}, u::AbstractVector{U}; kwargs... ) where {T,U}
     for i = 1:length(t)
@@ -35,9 +35,9 @@ end
 
 sandwich( M::AbstractModel ) = sandwich( rootmodel( M ) )
 
-getcompressedparameters( M::AbstractModel ) = getcompressedparameters( rootmodel( M ) )
+getparameters( M::AbstractModel ) = getparameters( rootmodel( M ) )
 
-setcompressedparameters!( M::AbstractModel, p::AbstractVector{Float64} ) = setcompressedparameters!( rootmodel( M ), p )
+setparameters!( M::AbstractModel, p::AbstractVector{Float64} ) = setparameters!( rootmodel( M ), p )
 
 struct FittableModel{T, U, V <: AbstractModel{T,U}, F <: Function} <: AbstractModel{T,U}
     model::V
@@ -306,7 +306,7 @@ function Base.rand( model::ANModel{T,U,V} ) where {T,U,V}
         end
         newmodel = deepcopy( model.rootmodel )
         n = size(model.transformation,1)
-        setcompressedparameters!( newmodel, getcompressedparameters( newmodel ) + model.transformation * randn(n) )
+        setparameters!( newmodel, getparameters( newmodel ) + model.transformation * randn(n) )
         reupdate( newmodel )
         push!( model.models, newmodel )
     end
