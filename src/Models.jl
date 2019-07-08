@@ -66,7 +66,7 @@ state( model::FittableModel{T,U,V,F} ) where {T,U,V,F} = state( model.model )
 
 rootmodel( model::FittableModel{T,U,V,F} ) where {T,U,V,F} = rootmodel( model.model )
 
-Base.rand( model::FittableModel{T,U,V,F} ) where {T,U,V,F} = Base.rand( model.model )
+Base.rand( model::FittableModel{T,U,V,F} ) where {T,U,V,F} = FittableModel( Base.rand( model.model ), model.f )
 
 mutable struct LogReturnModel{T,V <: AbstractModel{T,Float64}} <: AbstractModel{T,Float64}
     model::V
@@ -94,7 +94,9 @@ Dependencies.compress( model::LogReturnModel{T,V} ) where {T,V} = Dependencies.c
 
 initializationcount( ::Type{LogReturnModel{T,V}} ) where {T,V} = max(initializationcount( V ), 1)
 
-function initialize( model::LogReturnModel{T,V}, t::AbstractVector{T} = T[], u::AbstractVector{Float64} = Float64[] ) where {T,V}
+function initialize( model::LogReturnModel{T,V},
+                     t::AbstractVector{T} = T[],
+                     u::AbstractVector{Float64} = Float64[] ) where {T,V}
     model.lastprice = u[end:end]
     initialize( model.model, t, u )
 end
@@ -103,7 +105,7 @@ state( model::LogReturnModel{T,V} ) where {T,V} = state( model.model )
 
 rootmodel( model::LogReturnModel{T,V} ) where {T,V} = rootmodel( model.model )
 
-Base.rand( model::LogReturnModel{T,V} ) where {T,V} = Base.rand( model.model )
+Base.rand( model::LogReturnModel{T,V} ) where {T,V} = LogReturnModel( Base.rand( model.model ), model.lastprice )
 
 mutable struct MultiStartModel{T, U, V <: AbstractModel{T,U}, F <: Function} <: AbstractModel{T,U}
     models::Vector{V}
@@ -182,7 +184,8 @@ state( model::MultiStartModel{T,U,V,F} ) where {T,U,V,F} = state( model.models[m
 
 rootmodel( model::MultiStartModel{T,U,V,F} ) where {T,U,V,F} = rootmodel( model.models[model.optimumindex] )
 
-Base.rand( model::MultiStartModel{T,U,V,F} ) where {T,U,V,F} = rand( model.models[model.optimumindex] )
+Base.rand( model::MultiStartModel{T,U,V,F} ) where {T,U,V,F} =
+    MultiStartModel( rand( model.models[model.optimumindex] ), V[], model.criterion, 0 )
 
 mutable struct AdaptedModel{T, U, V <: AbstractModel{T,U}} <: AbstractModel{T,U}
     modelperiods::AbstractVector{T}
@@ -240,7 +243,7 @@ end
 
 function Base.rand( model::AdaptedModel{T,U,V} ) where {T,U,V}
     index = searchsorted( model.modelperiods, model.lastperiod[1] ).stop
-    return Base.rand( model.models[index] )
+    return AdaptedModel( model.modelperiods, [model.models[1:end-1]; Base.rand( model.models[index] )],  model.lastperiod )
 end
 
 mutable struct RewindableModel{T, U, V <: AbstractModel{T,U}} <: AbstractModel{T,U}
@@ -270,7 +273,7 @@ state( model::RewindableModel{T,U,V} ) where {T,U,V} = state( model.model )
 
 rootmodel( model::RewindableModel{T,U,V} ) where {T,U,V} = rootmodel( model.model )
 
-Base.rand( model::RewindableModel{T,U,V} ) where {T,U,V} = rand( model.model )
+Base.rand( model::RewindableModel{T,U,V} ) where {T,U,V} = RewindableModel( rand( model.model ), model.t, model.u )
 
 function reupdate( model::RewindableModel{T,U,V}; kwargs... ) where {T,U,V}
     n = initializationcount( V )
@@ -300,8 +303,11 @@ end
 
 function Base.rand( model::ANModel{T,U,V} ) where {T,U,V}
     if model.index > length(model.models)
+        @info( "Generating model $(model.index) at $(now())" )
         if isempty(model.transformation)
+            @info( "Calculating sandwich at $(now())" )
             C = sandwich( model )
+            @info( "Done calculating sandwich at $(now())" )
             model.transformation = real.(sqrt(C))
         end
         newmodel = deepcopy( model.rootmodel )
@@ -309,6 +315,7 @@ function Base.rand( model::ANModel{T,U,V} ) where {T,U,V}
         setcompressedparameters!( newmodel, getcompressedparameters( newmodel ) + model.transformation * randn(n) )
         reupdate( newmodel )
         push!( model.models, newmodel )
+        @info( "Done generating model $(model.index) at $(now())" )
     end
     model.index += 1
     return model.models[model.index-1]
