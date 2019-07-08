@@ -6,8 +6,6 @@ using Random
 using Distributed
 using Dependencies
 
-include( "DistributionModels.jl" )
-
 abstract type AbstractModel{T,U}
 end
 
