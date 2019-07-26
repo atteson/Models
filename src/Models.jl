@@ -154,8 +154,10 @@ function fit(
 
         models = pmap( submodel -> fit( submodel; kwargs... ), model.models )
     end
-    criteria = model.criterion.( model.models )
+    criteria = model.criterion.( models )
+    @debug( "Criteria are $criteria" )
     optimumindex = findmax( criteria )[2]
+    @debug( "Max is index $optimumindex and value $(criteria[optimumindex])" )
     return MultiStartModel( models, model.criterion, optimumindex )
 end
 
