@@ -156,7 +156,8 @@ function fit(
     end
     criteria = model.criterion.( models )
     @debug( "Criteria are $criteria" )
-    optimumindex = findmax( criteria )[2]
+    perm = sortperm(criteria)
+    optimumindex = perm[.!isnan.(criteria[perm])][end]
     @debug( "Max is index $optimumindex and value $(criteria[optimumindex])" )
     return MultiStartModel( models, model.criterion, optimumindex )
 end
